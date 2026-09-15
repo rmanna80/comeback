@@ -9,11 +9,16 @@ const INJURIES = ['ACL', 'Ankle', 'Hamstring', 'Meniscus', 'Other'];
 
 export default function OnboardingScreen({ onDone }) {
   const [injury, setInjury] = useState(null);
+  const [customInjury, setCustomInjury] = useState('');
   const [sport, setSport] = useState('');
   const [daysAgo, setDaysAgo] = useState('');
   const [phase, setPhase] = useState(null);
+  const [notes, setNotes] = useState('');
 
-  const ready = injury && sport.trim() && daysAgo !== '' && phase;
+  const injuryName = injury === 'Other' ? customInjury.trim() : injury;
+  const ready =
+    injury && (injury !== 'Other' || customInjury.trim()) &&
+    sport.trim() && daysAgo !== '' && phase;
 
   const submit = () => {
     if (!ready) return;
@@ -21,9 +26,11 @@ export default function OnboardingScreen({ onDone }) {
     injuryDate.setDate(injuryDate.getDate() - Number(daysAgo || 0));
     onDone({
       injury,
+      injuryName,
       sport: sport.trim(),
       injuryDate: injuryDate.toISOString(),
       phase,
+      notes: notes.trim(),
     });
   };
 
@@ -44,6 +51,15 @@ export default function OnboardingScreen({ onDone }) {
           </Pressable>
         ))}
       </View>
+      {injury === 'Other' && (
+        <TextInput
+          style={[styles.input, { marginTop: 10 }]}
+          placeholder="Type your injury (e.g. shoulder labrum)"
+          placeholderTextColor={colors.inkFaint}
+          value={customInjury}
+          onChangeText={setCustomInjury}
+        />
+      )}
 
       <Text style={styles.label}>Your sport</Text>
       <TextInput
@@ -57,7 +73,7 @@ export default function OnboardingScreen({ onDone }) {
       <Text style={styles.label}>Days since injury or surgery</Text>
       <TextInput
         style={styles.input}
-        placeholder="47"
+        placeholder="240"
         placeholderTextColor={colors.inkFaint}
         keyboardType="number-pad"
         value={daysAgo}
@@ -78,10 +94,17 @@ export default function OnboardingScreen({ onDone }) {
         </Pressable>
       ))}
 
-      <Pressable
-        onPress={submit}
-        style={[styles.cta, !ready && styles.ctaOff]}
-      >
+      <Text style={styles.label}>Notes from your PT (optional)</Text>
+      <TextInput
+        style={[styles.input, styles.notesInput]}
+        placeholder={'What you\u2019re cleared for, what\u2019s off-limits\u2026\ne.g. "cutting OK at 75%, no contact yet"'}
+        placeholderTextColor={colors.inkFaint}
+        value={notes}
+        onChangeText={setNotes}
+        multiline
+      />
+
+      <Pressable onPress={submit} style={[styles.cta, !ready && styles.ctaOff]}>
         <Text style={styles.ctaText}>Start the comeback</Text>
       </Pressable>
       <Text style={styles.disclaimer}>
@@ -110,6 +133,7 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 16, color: colors.ink,
   },
+  notesInput: { minHeight: 80, textAlignVertical: 'top' },
   phaseRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,

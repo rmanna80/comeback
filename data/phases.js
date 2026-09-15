@@ -35,13 +35,16 @@ export const GOAL_TEMPLATES = {
   ball: [
     { lane: 'rehab', title: 'Single-leg hops — pain-free only' },
     { lane: 'gym', title: 'Lower strength — squat progression' },
-    { lane: 'technical', title: 'Passing patterns — 20 min' },
-    { lane: 'technical', title: 'Light dribbling — cones, no cuts' },
+    { lane: 'technical', title: 'Cone dribbling — 5 patterns × 4 reps' },
+    { lane: 'technical', title: 'Ball touches — 300 total, both feet' },
+    { lane: 'technical', title: 'Passing off the wall — 100 each foot' },
   ],
   full: [
-    { lane: 'gym', title: 'Full lift — track vs pre-injury numbers' },
+    { lane: 'gym', title: 'Full lift — chase your pre-injury numbers' },
+    { lane: 'gym', title: 'Nordics + single-leg balance (prehab)' },
+    { lane: 'technical', title: 'Cone work — 5-10-5 shuttle × 6, time it' },
+    { lane: 'technical', title: 'Ball mastery — 500 touches' },
+    { lane: 'technical', title: 'Sprints — 6 × 20m, log your best' },
     { lane: 'technical', title: 'Full training session' },
-    { lane: 'technical', title: 'Sprint work — beat your benchmark' },
-    { lane: 'rehab', title: 'Prehab — nordics + balance' },
   ],
 };
