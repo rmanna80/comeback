@@ -1,23 +1,23 @@
-# v0.2 update — Tracker screen + tab navigation
+# v0.3 update — notifications
 
-## 1. Install navigation (PowerShell, inside comeback folder)
+## 1. Install (inside comeback folder)
 
-npx expo install @react-navigation/native @react-navigation/bottom-tabs react-native-screens
+npx expo install expo-notifications
 
-## 2. Replace / add these files in your comeback folder
+## 2. Replace / add these files
 
-- App.js                      (replace)
-- screens/OnboardingScreen.js (replace)
-- screens/TrackerScreen.js    (NEW)
-- data/phases.js              (replace)
-- data/milestones.js          (NEW)
+- App.js               (replace)
+- notifications.js     (NEW - goes in the root, next to App.js)
+- screens/TodayScreen.js (replace)
 
 ## 3. Restart
 
 npx expo start -c
 
-## 4. One-time: tap "Reset profile" on the Today screen
+Allow notifications when the app asks. You'll get:
+- 8:00 AM - day count + a quote matched to your injury/sport
+- 7:00 PM - a nudge, but ONLY if today's goals aren't all done
+  (finishing your list cancels tonight's nudge - you earned quiet)
 
-The profile now stores your custom injury name and PT notes, so
-re-run onboarding once. Enter ~240 days (8 months) and pick
-"Return to ball" or "Full training" to get field-phase goals.
+Times are hardcoded for now (notifications.js, setHours lines)
+- change them there if you want different times.

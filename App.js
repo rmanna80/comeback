@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import OnboardingScreen from './screens/OnboardingScreen';
 import TodayScreen from './screens/TodayScreen';
 import TrackerScreen from './screens/TrackerScreen';
+import { initNotifications } from './notifications';
 import { colors } from './theme';
 
 const Tab = createBottomTabNavigator();
@@ -15,6 +16,10 @@ const Tab = createBottomTabNavigator();
 export default function App() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (profile) initNotifications(profile);
+  }, [profile]);
 
   useEffect(() => {
     AsyncStorage.getItem('profile')
