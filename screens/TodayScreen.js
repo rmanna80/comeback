@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import {
   View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking,
 } from 'react-native';
@@ -11,7 +12,7 @@ import { colors, lanes } from '../theme';
 const dayKey = () => new Date().toISOString().slice(0, 10);
 const LANE_IDS = ['rehab', 'gym', 'technical'];
 
-export default function TodayScreen({ profile, onReset }) {
+export default function TodayScreen({ profile }) {
   const templateGoals = useMemo(
     () =>
       (GOAL_TEMPLATES[profile.phase] || []).map((g, i) => ({
@@ -28,14 +29,18 @@ export default function TodayScreen({ profile, onReset }) {
   const [editMode, setEditMode] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newLane, setNewLane] = useState('technical');
+  const [checkins, setCheckins] = useState({});
+  const [noteDraft, setNoteDraft] = useState('');
 
   const daysSince = Math.max(
     0,
     Math.floor((Date.now() - new Date(profile.injuryDate)) / 86400000)
   );
   const quote = pickQuote(profile.injury, profile.sport, daysSince);
+  const isFocused = useIsFocused();
 
   useEffect(() => {
+    if (!isFocused) return;
     (async () => {
       const custom = await AsyncStorage.getItem('customGoals');
       if (custom) {
@@ -56,8 +61,36 @@ export default function TodayScreen({ profile, onReset }) {
           .slice(0, 10);
         setStreak(lastDay === dayKey() || lastDay === yesterday ? count : 0);
       }
+      const cRaw = await AsyncStorage.getItem('checkins');
+      const c = cRaw ? JSON.parse(cRaw) : {};
+      setCheckins(c);
+      setNoteDraft(c[dayKey()]?.note || '');
     })();
-  }, [templateGoals]);
+  }, [templateGoals, isFocused]);
+
+  const keyDaysAgo = (n) =>
+    new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+
+  const saveCheckin = async (rating) => {
+    const key = dayKey();
+    const next = {
+      ...checkins,
+      [key]: { ...(checkins[key] || {}), rating },
+    };
+    setCheckins(next);
+    await AsyncStorage.setItem('checkins', JSON.stringify(next));
+  };
+
+  const saveNote = async () => {
+    const key = dayKey();
+    if (!checkins[key]) return;
+    const next = {
+      ...checkins,
+      [key]: { ...checkins[key], note: noteDraft.trim() },
+    };
+    setCheckins(next);
+    await AsyncStorage.setItem('checkins', JSON.stringify(next));
+  };
 
   const persistGoals = async (list) => {
     setGoals(list);
@@ -92,6 +125,14 @@ export default function TodayScreen({ profile, onReset }) {
     all[dayKey()] = next;
     await AsyncStorage.setItem('completions', JSON.stringify(all));
 
+    const logRaw = await AsyncStorage.getItem('dayLog');
+    const log = logRaw ? JSON.parse(logRaw) : {};
+    log[dayKey()] = {
+      done: goals.filter((g) => next[g.id]).length,
+      total: goals.length,
+    };
+    await AsyncStorage.setItem('dayLog', JSON.stringify(log));
+
     const allDone = goals.length > 0 && goals.every((g) => next[g.id]);
     if (allDone) {
       cancelTonightNudge(dayKey());
@@ -101,6 +142,11 @@ export default function TodayScreen({ profile, onReset }) {
         const updated = { count: prev.count + 1, lastDay: dayKey() };
         await AsyncStorage.setItem('streak', JSON.stringify(updated));
         setStreak(updated.count);
+        const bRaw = await AsyncStorage.getItem('bestStreak');
+        const best = bRaw ? Number(bRaw) : 0;
+        if (updated.count > best) {
+          await AsyncStorage.setItem('bestStreak', String(updated.count));
+        }
       }
     }
   };
@@ -145,6 +191,18 @@ export default function TodayScreen({ profile, onReset }) {
         {doneCount} of {goals.length} goals done today
         {isCustom ? ' · your program' : ' · starter template'}
       </Text>
+
+      {checkins[keyDaysAgo(1)]?.rating <= 2 &&
+      checkins[keyDaysAgo(2)]?.rating <= 2 ? (
+        <View style={styles.adviceCard}>
+          <Text style={styles.adviceTitle}>Two rough days logged</Text>
+          <Text style={styles.adviceText}>
+            Recovery is training too. Consider swapping today's field work
+            for recovery volume — bike, mobility, light touches. If it
+            keeps up, loop in your PT.
+          </Text>
+        </View>
+      ) : null}
 
       {byLane.map(({ lane, items }) => (
         <View key={lane} style={{ marginTop: 18 }}>
@@ -227,6 +285,65 @@ export default function TodayScreen({ profile, onReset }) {
         </View>
       ) : null}
 
+      <View style={styles.checkinCard}>
+        <Text style={styles.checkinTitle}>How did it feel today?</Text>
+        <Text style={styles.checkinSub}>1 = rough · 5 = strong</Text>
+        <View style={styles.ratingRow}>
+          {[1, 2, 3, 4, 5].map((n) => {
+            const selected = checkins[dayKey()]?.rating === n;
+            return (
+              <Pressable
+                key={n}
+                onPress={() => saveCheckin(n)}
+                style={[styles.ratingDot, selected && styles.ratingDotOn]}
+              >
+                <Text
+                  style={[styles.ratingNum, selected && styles.ratingNumOn]}
+                >
+                  {n}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {checkins[dayKey()]?.rating ? (
+          <>
+            {checkins[dayKey()].rating <= 2 ? (
+              <Text style={styles.checkinLow}>
+                Rough one. A lighter day keeps the comeback on schedule —
+                mention it to your PT if it lingers.
+              </Text>
+            ) : null}
+            <TextInput
+              style={styles.noteInput}
+              placeholder="Optional: what stood out? (swelling, felt fast…)"
+              placeholderTextColor={colors.inkFaint}
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              onEndEditing={saveNote}
+              multiline
+            />
+          </>
+        ) : null}
+        <View style={styles.weekRow}>
+          {[6, 5, 4, 3, 2, 1, 0].map((n) => {
+            const r = checkins[keyDaysAgo(n)]?.rating;
+            return (
+              <View
+                key={n}
+                style={[
+                  styles.weekDot,
+                  r >= 4 && { backgroundColor: colors.pitch, borderColor: colors.pitch },
+                  r === 3 && { backgroundColor: colors.pitchSoft, borderColor: colors.pitchSoft },
+                  r <= 2 && r > 0 && { backgroundColor: colors.emberSoft, borderColor: colors.ember },
+                ]}
+              />
+            );
+          })}
+          <Text style={styles.weekLabel}>last 7 days</Text>
+        </View>
+      </View>
+
       <Pressable
         style={styles.quoteCard}
         onPress={() => quote.url && Linking.openURL(quote.url)}
@@ -238,9 +355,7 @@ export default function TodayScreen({ profile, onReset }) {
         </Text>
       </Pressable>
 
-      <Pressable onPress={onReset} style={{ marginTop: 24, marginBottom: 40 }}>
-        <Text style={styles.reset}>Reset profile</Text>
-      </Pressable>
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
@@ -305,6 +420,43 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   resetTemplate: { color: colors.inkFaint, fontSize: 12, marginTop: 12, textAlign: 'center' },
+  adviceCard: {
+    marginTop: 14, backgroundColor: colors.emberSoft,
+    borderRadius: 12, padding: 14,
+  },
+  adviceTitle: { color: colors.ember, fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  adviceText: { color: colors.ink, fontSize: 13, lineHeight: 19 },
+  checkinCard: {
+    marginTop: 24, backgroundColor: colors.card, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.line, padding: 16,
+  },
+  checkinTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  checkinSub: { color: colors.inkFaint, fontSize: 12, marginTop: 2, marginBottom: 12 },
+  ratingRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
+  ratingDot: {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 2,
+    borderColor: colors.line, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  ratingDotOn: { backgroundColor: colors.pitch, borderColor: colors.pitch },
+  ratingNum: { color: colors.inkSoft, fontSize: 16, fontWeight: '700' },
+  ratingNumOn: { color: '#fff' },
+  checkinLow: {
+    color: colors.inkSoft, fontSize: 13, lineHeight: 19, marginTop: 12,
+  },
+  noteInput: {
+    marginTop: 12, backgroundColor: colors.bg, borderWidth: 1,
+    borderColor: colors.line, borderRadius: 10, paddingHorizontal: 12,
+    paddingVertical: 10, fontSize: 14, color: colors.ink, minHeight: 44,
+  },
+  weekRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14,
+  },
+  weekDot: {
+    width: 14, height: 14, borderRadius: 5,
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.bg,
+  },
+  weekLabel: { color: colors.inkFaint, fontSize: 11, marginLeft: 6 },
   quoteCard: {
     marginTop: 24, backgroundColor: colors.card, borderRadius: 14,
     borderWidth: 1, borderColor: colors.line, padding: 16,
@@ -312,5 +464,4 @@ const styles = StyleSheet.create({
   quoteKicker: { color: colors.ember, fontSize: 12, fontWeight: '700', marginBottom: 6 },
   quoteText: { color: colors.ink, fontSize: 15, lineHeight: 22, fontStyle: 'italic' },
   quoteWho: { color: colors.inkSoft, fontSize: 13, marginTop: 8 },
-  reset: { color: colors.inkFaint, fontSize: 13, textAlign: 'center' },
 });

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import {
   View, Text, TextInput, Pressable, StyleSheet, ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { milestonesFor, returnEstimateFor } from '../data/milestones';
+import { computeBadges } from '../data/badges';
 import { colors } from '../theme';
 
 export default function TrackerScreen({ profile }) {
@@ -13,6 +16,14 @@ export default function TrackerScreen({ profile }) {
   const [newTarget, setNewTarget] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [dayLog, setDayLog] = useState({});
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const isFocused = useIsFocused();
+  const [bestStreak, setBestStreak] = useState(0);
+  const [phaseHistory, setPhaseHistory] = useState([]);
 
   const milestones = milestonesFor(profile.injury);
   const estimate = returnEstimateFor(profile.injury);
@@ -26,13 +37,60 @@ export default function TrackerScreen({ profile }) {
   const displayName = profile.injuryName || profile.injury;
 
   useEffect(() => {
+    if (!isFocused) return;
     (async () => {
       const m = await AsyncStorage.getItem('milestones');
       if (m) setUnlocked(JSON.parse(m));
       const b = await AsyncStorage.getItem('benchmarks');
       if (b) setBenchmarks(JSON.parse(b));
+      const l = await AsyncStorage.getItem('dayLog');
+      const log = l ? JSON.parse(l) : {};
+      const c = await AsyncStorage.getItem('completions');
+      if (c) {
+        const comps = JSON.parse(c);
+        Object.keys(comps).forEach((k) => {
+          if (!log[k]) {
+            const anyDone = Object.values(comps[k]).some(Boolean);
+            if (anyDone) log[k] = { done: 1, total: 2 };
+          }
+        });
+      }
+      setDayLog(log);
+      const bs = await AsyncStorage.getItem('bestStreak');
+      setBestStreak(bs ? Number(bs) : 0);
+      const ph = await AsyncStorage.getItem('phaseHistory');
+      setPhaseHistory(ph ? JSON.parse(ph) : []);
     })();
-  }, []);
+  }, [isFocused]);
+
+  const monthDays = (() => {
+    const year = monthCursor.getFullYear();
+    const month = monthCursor.getMonth();
+    const first = new Date(year, month, 1);
+    const cells = [];
+    for (let i = 0; i < first.getDay(); i++) cells.push(null);
+    const count = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= count; d++) cells.push(new Date(year, month, d));
+    return cells;
+  })();
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const dayStatus = (date) => {
+    if (!date) return 'blank';
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    if (key > todayKey) return 'future';
+    const entry = dayLog[key];
+    if (!entry) return 'missed';
+    if (entry.total > 0 && entry.done >= entry.total) return 'complete';
+    if (entry.done > 0) return 'partial';
+    return 'missed';
+  };
+
+  const shiftMonth = (delta) =>
+    setMonthCursor(
+      (m) => new Date(m.getFullYear(), m.getMonth() + delta, 1)
+    );
 
   const toggleMilestone = async (id) => {
     const next = { ...unlocked };
@@ -219,6 +277,97 @@ export default function TrackerScreen({ profile }) {
           <Text style={styles.addBtnText}>Add</Text>
         </Pressable>
       </View>
+      <Text style={[styles.section, { color: colors.ember, marginTop: 24 }]}>
+        Trophy case
+      </Text>
+      {(() => {
+        const { earned, locked } = computeBadges({
+          unlockedMilestones: unlocked,
+          milestones,
+          bestStreak,
+          benchmarks,
+          phaseHistory,
+          injuryDate: profile.injuryDate,
+        });
+        if (!earned.length && !locked.length) return null;
+        return (
+          <View style={styles.badgeGrid}>
+            {earned.map((b) => (
+              <View key={b.id} style={[styles.badge, styles.badgeEarned]}>
+                <Ionicons name={b.icon} size={18} color={colors.ember} />
+                <Text style={styles.badgeLabel} numberOfLines={1}>
+                  {b.label}
+                </Text>
+                <Text style={styles.badgeSub} numberOfLines={1}>{b.sub}</Text>
+              </View>
+            ))}
+            {locked.map((b) => (
+              <View key={b.id} style={styles.badge}>
+                <Ionicons name="lock-closed" size={18} color={colors.inkFaint} />
+                <Text style={[styles.badgeLabel, styles.badgeLocked]} numberOfLines={1}>
+                  {b.label}
+                </Text>
+                <Text style={styles.badgeSub} numberOfLines={1}>{b.sub}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      })()}
+
+      <Text style={[styles.section, { color: colors.inkSoft, marginTop: 24 }]}>
+        History
+      </Text>
+      <View style={styles.calCard}>
+        <View style={styles.calHeader}>
+          <Pressable onPress={() => shiftMonth(-1)} hitSlop={8}>
+            <Text style={styles.calNav}>‹</Text>
+          </Pressable>
+          <Text style={styles.calMonth}>
+            {monthCursor.toLocaleDateString(undefined, {
+              month: 'long', year: 'numeric',
+            })}
+          </Text>
+          <Pressable onPress={() => shiftMonth(1)} hitSlop={8}>
+            <Text style={styles.calNav}>›</Text>
+          </Pressable>
+        </View>
+        <View style={styles.calGrid}>
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+            <Text key={`h${i}`} style={styles.calDow}>{d}</Text>
+          ))}
+          {monthDays.map((date, i) => {
+            const status = dayStatus(date);
+            return (
+              <View
+                key={i}
+                style={[
+                  styles.calCell,
+                  status === 'complete' && styles.calComplete,
+                  status === 'partial' && styles.calPartial,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.calDay,
+                    status === 'complete' && styles.calDayComplete,
+                    status === 'future' && styles.calDayFuture,
+                  ]}
+                >
+                  {date ? date.getDate() : ''}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={styles.legend}>
+          <View style={[styles.legendDot, styles.calComplete]} />
+          <Text style={styles.legendText}>all goals</Text>
+          <View style={[styles.legendDot, styles.calPartial]} />
+          <Text style={styles.legendText}>some</Text>
+          <View style={[styles.legendDot, { backgroundColor: colors.bg }]} />
+          <Text style={styles.legendText}>none</Text>
+        </View>
+      </View>
       <View style={{ height: 40 }} />
     </ScrollView>
   );
@@ -288,4 +437,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, justifyContent: 'center',
   },
   addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  badgeGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+  },
+  badge: {
+    width: '48%', backgroundColor: colors.card, borderWidth: 1,
+    borderColor: colors.line, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', gap: 2,
+  },
+  badgeEarned: { backgroundColor: colors.emberSoft, borderColor: colors.ember },
+  badgeLabel: {
+    color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 4,
+  },
+  badgeLocked: { color: colors.inkFaint },
+  badgeSub: { color: colors.inkSoft, fontSize: 11 },
+  calCard: {
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line,
+    borderRadius: 12, padding: 12,
+  },
+  calHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4,
+  },
+  calNav: { color: colors.inkSoft, fontSize: 22, paddingHorizontal: 10 },
+  calMonth: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calDow: {
+    width: '14.28%', textAlign: 'center', color: colors.inkFaint,
+    fontSize: 11, fontWeight: '700', marginBottom: 4,
+  },
+  calCell: {
+    width: '14.28%', aspectRatio: 1, alignItems: 'center',
+    justifyContent: 'center', borderRadius: 8,
+  },
+  calComplete: { backgroundColor: colors.pitch },
+  calPartial: { backgroundColor: colors.pitchSoft },
+  calDay: { color: colors.ink, fontSize: 13 },
+  calDayComplete: { color: '#fff', fontWeight: '700' },
+  calDayFuture: { color: colors.inkFaint },
+  legend: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 10, justifyContent: 'center',
+  },
+  legendDot: {
+    width: 12, height: 12, borderRadius: 4,
+    borderWidth: 1, borderColor: colors.line,
+  },
+  legendText: { color: colors.inkFaint, fontSize: 11, marginRight: 8 },
 });
